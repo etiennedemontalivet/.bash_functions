@@ -1,4 +1,7 @@
-# RCP / RUNAI
+# ~/.bash_functions/runai.sh
+# RunAI helper functions
+# Author: Etienne de Montalivet
+# Loaded by ~/.bashrc
 rcp() {
     local job_name="etienne-$(date +"%y%m%d-%H%M%S")"
     echo "Launching job: $job_name"
@@ -7,14 +10,14 @@ rcp() {
 
 alias rcp_interactive="rcp -i registry.rcp.epfl.ch/rcp-runai-upcourtine-klee/wyss_nvidia_pytorch_deps:latest           -e GIT_BRANCH_SYN_DECODER='dev'                     -e SSH_PRIVATE_KEY=SECRET:ssh-key-secret,id_rsa           -e USER='klee'           -e CACHE_DIR=/home/klee/nas/wyss/data/cache           -e SCRIPT_PATH='notebooks/charles/train_cyclegan.py'       --cpu 16 --memory 64G           --pvc upcourtine-scratch:/home/klee/nas:rw        --interactive --attach -g 1"
 
-
 runai_find_jobs () {
   local job_filter="$1"; shift || true
   local parallelism=8
-  local list_all=0
+  local show_pat=""
+  local debug=0
 
   if [[ -z "$job_filter" ]]; then
-    echo "Usage: runai_find_jobs <jobname_regex> <log_pattern1> [log_pattern2 ...] [--parallel N] [--all]" >&2
+    echo "Usage: runai_find_jobs <jobname_regex> <log_pattern1> [log_pattern2 ...] [--parallel N] [--show PATTERN] [--debug]" >&2
     return 1
   fi
 
@@ -23,37 +26,48 @@ runai_find_jobs () {
     case "$1" in
       --parallel|-P) shift; parallelism="${1:-8}"; shift || true ;;
       --parallel=*|-P=*) parallelism="${1#*=}"; shift ;;
-      --all) list_all=1; shift ;;
+      --show) shift; show_pat="${1:-}"; shift || true ;;
+      --show=*) show_pat="${1#*=}"; shift ;;
+      --debug) debug=1; shift ;;
       *) patterns+=("$1"); shift ;;
     esac
   done
 
   if [[ ${#patterns[@]} -eq 0 ]]; then
-    echo "Usage: runai_find_jobs <jobname_regex> <log_pattern1> [log_pattern2 ...] [--parallel N] [--all]" >&2
+    echo "Usage: runai_find_jobs <jobname_regex> <log_pattern1> [log_pattern2 ...] [--parallel N] [--show PATTERN] [--debug]" >&2
     return 1
   fi
 
-  # Adjust this if your RunAI uses a different "show all jobs" flag:
-  local list_cmd=(runai list jobs)
-  if [[ "$list_all" -eq 1 ]]; then
-    list_cmd+=(--all)
-  fi
+  # Candidate jobs
+  local candidates
+  candidates="$(
+    runai list jobs 2>&1 \
+      | sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g' \
+      | awk -v pat="$job_filter" '$1 ~ pat {print $1}'
+  )"
 
-  "${list_cmd[@]}" \
-    | awk -v pat="$job_filter" 'NR>1 && $1 ~ pat {print $1}' \
-    | xargs -r -n1 -P"$parallelism" bash -c '
-        job="$1"; shift
+  [[ -z "$candidates" ]] && return 0
 
-        # Capture BOTH stdout+stderr to avoid missing logs if they go to stderr
-        logs="$(runai logs "$job" 2>&1)" || exit 0
+  printf '%s\n' "$candidates" \
+    | xargs -r -P"$parallelism" -I{} bash -c '
+        JOB="{}"; shift
+        dbg="$1"; shift
+        show_pat="$1"; shift
 
+        # Check ALL patterns exist (AND semantics)
         for p in "$@"; do
-          printf "%s" "$logs" | grep -Fq -- "$p" || exit 0
+          runai logs "$JOB" 2>&1 | grep -Fq -- "$p" || exit 0
         done
 
-        echo "$job"
-      ' _ {} "${patterns[@]}"
+        if [[ -n "$show_pat" ]]; then
+          echo "===== $JOB ====="
+          runai logs "$JOB" 2>&1 | grep -F --color=always -- "$show_pat"
+        else
+          echo "$JOB"
+        fi
+      ' _ "$debug" "$show_pat" "${patterns[@]}"
 }
+
 
 delete_runai_jobs() {
   if ! command -v runai >/dev/null 2>&1; then
