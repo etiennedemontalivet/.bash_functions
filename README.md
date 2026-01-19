@@ -13,10 +13,19 @@ Or use this one-liner to add it automatically:
 echo 'for f in ~/.bash_functions/*.sh; do [ -f "$f" ] && source "$f"; done' >> ~/.bashrc
 ```
 
+## Configuration (optional, recommended)
+
+Create a user-specific config file (this will NOT be tracked by git):
+
+```bash
+echo 'export RUNAI_JOB_PREFIX="$USER"' > ~/.bash_functions/runai_config.sh
+```
+
+
 ## runai commands
 
 ### `rcp`
-Submits a Run:AI job with an auto-generated name of the form "etienne-YYMMDD-HHMMSS" and forwards all additional arguments to runai submit.
+Submits a Run:AI job with an auto-generated name of the form "${RUNAI_JOB_PREFIX}-YYMMDD-HHMMSS" and forwards all additional arguments to runai submit.
 Usage:
 ```bash
 rcp [runai submit options and arguments]

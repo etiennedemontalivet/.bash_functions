@@ -2,8 +2,20 @@
 # RunAI helper functions
 # Author: Etienne de Montalivet
 # Loaded by ~/.bashrc
+
+
+# Optional: source user-specific overrides if present (untracked file)
+RUNAI_CONFIG_FILE="${RUNAI_CONFIG_FILE:-$HOME/.bash_functions/runai_config.sh}"
+if [[ -f "$RUNAI_CONFIG_FILE" ]]; then
+  # shellcheck source=/dev/null
+  source "$RUNAI_CONFIG_FILE"
+fi
+# Default job prefix (can be overridden by exporting RUNAI_JOB_PREFIX)
+: "${RUNAI_JOB_PREFIX:=$USER}"
+
+
 rcp() {
-    local job_name="etienne-$(date +"%y%m%d-%H%M%S")"
+    local job_name="${RUNAI_JOB_PREFIX}-$(date +"%y%m%d-%H%M%S")"
     echo "Launching job: $job_name"
     runai submit "$job_name" "$@"
 }
